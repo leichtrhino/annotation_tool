@@ -1,0 +1,294 @@
+<!doctype html>
+<html>
+
+<head>
+    <title>annotation tool</title>
+    <style>
+        .grid_container {
+            display: grid;
+            grid-template-columns: 49% 49%;
+        }
+    </style>
+</head>
+
+<body>
+    <div>
+        <span>tiff file</span>
+        <input type="file" id="tiff_input" />
+    </div>
+    <div>
+        <span>csv file</span>
+        <input type="file" id="csv_input" />
+    </div>
+    <div class="grid_container">
+        <div>
+            <p>画像ペイン</p>
+            <canvas id="tiff_canvas"></canvas>
+            <div>
+                <button id="tiff_prev_page">prev</button>
+                <input type="range" id="tiff_page_slider"/>
+                <button id="tiff_next_page">next</button>
+                <span id="tiff_current_page"></span>/<span id="tiff_total_page"></span>
+            </div>
+            <div>
+                <span>表示キーポイント</span>
+                <select name="visible_keypoints" id="keypoints_select">
+                    <option value="">all</option>
+                </select>
+            </div>
+        </div>
+        <div>
+            <p>テーブルペイン</p>
+            <div style="height: 400px; overflow: auto">
+                <table>
+                    <thread><tr><th>No</th><th>x座標</th><th>y座標</th><th>ラベル</th><th>削除</th></tr></thread>
+                    <tbody id="keypoint_table"></tbody>
+                </table>
+            </div>
+            <button id="keypoint_add">キーポイント追加</button>
+        </div>
+    </div>
+    <div>
+        <button id="keypoint_export">csvエクスポート</button>
+    </div>
+
+    <script src="./tiff.min.js"></script>
+    <script type="text/javascript">
+        Tiff.initialize({TOTAL_MEMORY:  1024*1024*1024});
+        var tiff = undefined;
+        var pageNum = undefined;
+        var keypoints = undefined;
+        var selectedKeypointIdx = undefined;
+
+        const tiffInputElement = document.getElementById('tiff_input');
+        const csvInputElement = document.getElementById('csv_input');
+        const keypointNames = ["Left Eye", "Right Eye", "Nose", "Neck", "Root of Tail", "Left Shoulder", "Left Elbow", "Left Front Paw", "Right Shoulder", "Right Elbow", "Right Front Paw", "Left Hip", "Left Knee", "Left Back Paw", "Right Hip", "Right Knee", "Right Back Paw", "Tip of Tail", "Head", "Chin", "Left Cheek", "Left Mouth", "Tip of Left Ear", "Right Cheek", "Right Mouth", "Tip of Right Ear", "Root of Left Shoulder", "Root of Right Shoulder", "Root of Left Hip", "Root of Right Hip", "Hip", "Tip of Left Front Paw", "Tip of Right Front Paw", "Tip of Left Back Paw", "Tip of Right Back Paw"];
+        const keypointColor = 'red';
+        const selectedKeypointColor = 'cyan'
+        const keypointRadius = 2;
+        const scale = 0.25;
+
+        tiffInputElement.addEventListener('change', () => {
+            const tiffFile = tiffInputElement.files[0];
+            const reader = new FileReader();
+            reader.onload = (e) => {
+                const fileContent = e.target.result;
+                tiff = new Tiff({buffer: fileContent});
+
+                // Update total page
+                const totalPage = document.getElementById('tiff_total_page');
+                totalPage.textContent = tiff.countDirectory();
+
+                // Update slider
+                const pageSlider = document.getElementById('tiff_page_slider');
+                pageSlider.min = 0;
+                pageSlider.max = tiff.countDirectory() - 1;
+
+                // Update keypoints
+                keypoints = Array.from({length: tiff.countDirectory()}, () => []);
+                updatePageNum(0);
+            };
+            reader.onerror = (e) => {
+                console.error("Error reading file:", e.target.error);
+            };
+            reader.readAsArrayBuffer(tiffFile);
+        });
+
+        csvInputElement.addEventListener('change', () => {
+            const csvFile = csvInputElement.files[0];
+            const reader = new FileReader();
+            reader.onload =(e) => {
+                const fileContent = e.target.result;
+                // Initialize keypoints
+                keypoints = Array.from({length: tiff.countDirectory()}, () => []);
+                fileContent.split(/\r?\n/).slice(1).forEach(row => {
+                    cols = row.split(',');
+                    if (cols.length >= 3) {
+                        const t = parseInt(cols[1]);
+                        const x = parseInt(cols[3]);
+                        const y = parseInt(cols[2]);
+                        const k = cols[4] || null;
+                        keypoints[t].push({x: x, y: y, k: k});
+                    }
+                });
+                // Render current information
+                updatePageNum(pageNum);
+            };
+            reader.onerror = (e) => {
+                console.error('Error reading file:', e.target.error);
+            };
+            reader.readAsText(csvFile);
+        });
+
+        // Initialize button slider
+        const pageSlider = document.getElementById('tiff_page_slider');
+        pageSlider.addEventListener('input', (e) => {
+            updatePageNum(parseInt(e.target.value));
+        });
+        const prevPage = document.getElementById('tiff_prev_page');
+        prevPage.addEventListener('click', (e) => {
+            updatePageNum(pageNum-1);
+        });
+        const nextPage = document.getElementById('tiff_next_page');
+        nextPage.addEventListener('click', (e) => {
+            updatePageNum(pageNum+1);
+        });
+
+        // Initialize visible keypoint select
+        const keypointSelect = document.getElementById('keypoints_select');
+        keypointNames.forEach(element => {
+            const option = document.createElement('option');
+            option.textContent = element;
+            option.value = element;
+            keypointSelect.appendChild(option);
+        })
+        keypointSelect.addEventListener('change', (e) => {
+            updatePageNum(pageNum);
+        });
+
+        // Initialize keypoint add button
+        const keypointAdd = document.getElementById('keypoint_add');
+        keypointAdd.addEventListener('click', (e) => {
+            keypoints[pageNum].push({x: 0, y: 0, k: null});
+            updatePageNum(pageNum);
+        });
+
+        // Initialize keypoint export
+        const keypointExport = document.getElementById('keypoint_export');
+        keypointExport.addEventListener('click', (e) => {
+            let rows = [['index', 'axis-0', 'axis-1', 'axis-2', 'keypoint']];
+            let index = 0;
+            keypoints.forEach((frame_kp, frame_i) => {
+                frame_kp.forEach(kp => {
+                    rows.push([index, frame_i, kp.y, kp.x, kp.k]);
+                    index += 1;
+                })
+            });
+            const rowsText = rows.map(r => r.join(',')).join('\n');
+            const blob = new Blob([rowsText], {type: 'text/csv'});
+            const link = document.createElement('a');
+            document.body.appendChild(link);
+            link.href = window.URL.createObjectURL(blob);
+            link.download = 'keypoint.csv';
+            link.click();
+            document.body.removeChild(link);
+        });
+
+        updatePageNum = function(page_i) {
+            // TODO: check page boundary
+            pageNum = page_i;
+            tiff.setDirectory(page_i);
+
+            // Update canvas
+            const imageArrayBuffer = tiff.readRGBAImage();
+            const imageArray = new Uint8ClampedArray(imageArrayBuffer);
+            const canvas = document.getElementById('tiff_canvas');
+            const ctx = canvas.getContext('2d');
+            canvas.width = tiff.width();
+            canvas.height = tiff.height();
+            const imageData = ctx.createImageData(tiff.width(), tiff.height());
+            imageData.data.set(imageArray);
+            ctx.putImageData(imageData, 0, 0);
+            // Draw keypoint circles
+            const selectedKeypoint = keypointSelect.value;
+            keypoints[pageNum].forEach((kp, idx) => {
+                if (selectedKeypoint == '' || kp.k == selectedKeypoint) {
+                    ctx.beginPath();
+                    ctx.arc(kp.x * scale, kp.y * scale, keypointRadius, 0, 2*Math.PI);
+                    if (idx == selectedKeypointIdx) {
+                        ctx.fillStyle = selectedKeypointColor;
+                    } else {
+                        ctx.fillStyle = keypointColor;
+                    }
+                    ctx.fill();
+                }
+            });
+
+            // Update frame number
+            const currentPage = document.getElementById('tiff_current_page');
+            currentPage.textContent = page_i + 1;
+
+            // Update slider
+            const pageSlider = document.getElementById('tiff_page_slider');
+            pageSlider.value = page_i;
+
+            // Update table
+            const keypointTable = document.getElementById('keypoint_table');
+            keypointTable.innerHTML = ''; // clear table
+            keypoints[page_i].forEach((kp, idx) => {
+                const tr = document.createElement('tr');
+                const n = document.createElement('td');
+                n.style.textAlign = 'right';
+                n.textContent = idx+1;
+                if (idx == selectedKeypointIdx) {
+                    n.style.fontWeight = 'bold';
+                }
+                n.addEventListener('click', (event) => {
+                    selectedKeypointIdx = idx;
+                    updatePageNum(page_i);
+                });
+                tr.appendChild(n);
+
+                const x = document.createElement('td');
+                const xl = document.createElement('input');
+                xl.type = 'number';
+                xl.style.width = '6ch';
+                xl.style.textAlign = 'right';
+                xl.value = kp.x;
+                xl.addEventListener('change', (event) => {
+                    keypoints[page_i][idx].x = parseInt(event.target.value);
+                    updatePageNum(page_i);
+                });
+                x.appendChild(xl);
+                tr.appendChild(x);
+
+                const y = document.createElement('td');
+                const yl = document.createElement('input');
+                yl.type = 'number';
+                yl.style.width = '6ch';
+                yl.style.textAlign = 'right';
+                yl.value = kp.y;
+                yl.addEventListener('change', (event) => {
+                    keypoints[page_i][idx].y = parseInt(event.target.value);
+                    updatePageNum(page_i);
+                });
+                y.appendChild(yl);
+                tr.appendChild(y);
+
+                // keypoint select
+                const k = document.createElement('td');
+                const kl = document.createElement('select');
+                keypointNames.forEach(element => {
+                    const option = document.createElement('option');
+                    option.textContent = element;
+                    option.value = element;
+                    kl.appendChild(option);
+                });
+                kl.name = 'kpselect_' + page_i + '_' + idx;
+                kl.value = kp.k;
+                kl.addEventListener('change', (event) => {
+                    keypoints[page_i][idx].k = event.target.value;
+                    updatePageNum(page_i);
+                });
+                k.appendChild(kl);
+                tr.appendChild(k);
+
+                // delete button
+                const d = document.createElement('td');
+                const dl = document.createElement('button');
+                dl.textContent = '削除';
+                dl.addEventListener('click', (event) => {
+                    keypoints[page_i].splice(idx, 1);
+                    updatePageNum(page_i);
+                });
+                d.appendChild(dl);
+                tr.appendChild(d);
+
+                keypointTable.appendChild(tr);
+            });
+        }
+
+    </script>
+</body>
+
+</html>
