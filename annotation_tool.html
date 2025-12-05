@@ -46,6 +46,8 @@
                 </table>
             </div>
             <button id="keypoint_add">キーポイント追加</button>
+            <button id="keypoint_paste">前フレームからペースト</button>
+            <span id="keypoint_message"></span>
         </div>
     </div>
     <div>
@@ -62,7 +64,7 @@
 
         const tiffInputElement = document.getElementById('tiff_input');
         const csvInputElement = document.getElementById('csv_input');
-        const keypointNames = ["Nose", "Left Eye", "Right Eye", "Head", "Tip of Left Ear", "Tip of Right Ear", "Chin", "Left Mouth", "Right Mouth", "Left Cheek", "Right Cheek", "Neck", "Root of Left Shoulder", "Left Shoulder", "Left Elbow", "Left Front Paw", "Tip of Left Front Paw", "Root of Right Shoulder", "Right Shoulder", "Right Elbow", "Right Front Paw", "Tip of Right Front Paw", "Hip", "Root of Left Hip", "Left Hip", "Left Knee", "Left Back Paw", "Tip of Left Back Paw", "Right Hip", "Right Knee", "Right Back Paw", "Root of Right Hip", "Tip of Right Back Paw", "Root of Tail", "Tip of Tail"];
+        const keypointNames = ["Nose", "Left Eye", "Right Eye", "Head", "Tip of Left Ear", "Tip of Right Ear", "Chin", "Left Mouth", "Right Mouth", "Left Cheek", "Right Cheek", "Neck", "Root of Left Shoulder", "Left Shoulder", "Left Elbow", "Left Front Paw", "Tip of Left Front Paw", "Root of Right Shoulder", "Right Shoulder", "Right Elbow", "Right Front Paw", "Tip of Right Front Paw", "Hip", "Root of Left Hip", "Left Hip", "Left Knee", "Left Back Paw", "Tip of Left Back Paw", "Root of Right Hip", "Right Hip", "Right Knee", "Right Back Paw", "Tip of Right Back Paw", "Root of Tail", "Tip of Tail"];
         const keypointColor = 'red';
         const selectedKeypointColor = 'cyan'
         const keypointRadius = 2;
@@ -150,6 +152,28 @@
         const keypointAdd = document.getElementById('keypoint_add');
         keypointAdd.addEventListener('click', (e) => {
             keypoints[pageNum].push({x: 0, y: 0, k: null});
+            updatePageNum(pageNum);
+        });
+
+        // Initialize keypoint paste button
+        const keypointPaste = document.getElementById('keypoint_paste');
+        keypointPaste.addEventListener('click', (e) => {
+            if ((pageNum || 0) <= 0) {
+                return;
+            }
+            for (let index = 0; index < keypoints[pageNum].length; index++) {
+                const kp = keypoints[pageNum][index];
+                let minDist = -1;
+                let minLabel = undefined;
+                keypoints[pageNum-1].forEach((e, i) => {
+                    const dist = (kp.x - e.x) * (kp.x - e.x) + (kp.y - e.y) * (kp.y - e.y)
+                    if (e.k !== undefined && (minDist < 0 || minDist > dist)) {
+                        minLabel = e.k;
+                        minDist = dist;
+                    }
+                });
+                keypoints[pageNum][index].k = minLabel;
+            }
             updatePageNum(pageNum);
         });
 
@@ -286,6 +310,35 @@
 
                 keypointTable.appendChild(tr);
             });
+
+            // Show keypoint stats
+            const keypointMsg = document.getElementById('keypoint_message');
+            // count keypoint labels
+            let kpLabels = {};
+            keypointNames.forEach(element => {
+                kpLabels[element] = 0;
+            })
+            keypoints[page_i].forEach(element => {
+                kpLabels[element.k] = (kpLabels[element.k] || 0) + 1;
+            });
+            let lackKps = [];
+            let duplKps = [];
+            keypointNames.forEach(element => {
+                if (kpLabels[element] == 0) {
+                    lackKps.push(element);
+                }
+                if (kpLabels[element] > 0) {
+                    duplKps.push(element);
+                }
+            });
+            let msg = '';
+            if (lackKps.length > 0) {
+                msg = msg + 'lack: ' + lackKps.join(', ');
+            }
+            if (duplKps.length > 0) {
+                msg = msg + '\ndupl: ' + duplKps.join(', ');
+            }
+            keypointMsg.textContent = msg
         }
 
     </script>
