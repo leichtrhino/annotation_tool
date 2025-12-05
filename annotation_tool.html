@@ -322,7 +322,7 @@
             })
             keypoints[page_i].forEach((element, idx) => {
                 if (element.k !== undefined && element.k !== null) {
-                    kpLabels[element.k].push(idx+1);
+                    kpLabels[element.k].push(idx);
                 }
             });
             let lackKps = [];
