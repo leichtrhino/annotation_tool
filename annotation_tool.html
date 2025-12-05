@@ -47,7 +47,8 @@
             </div>
             <button id="keypoint_add">キーポイント追加</button>
             <button id="keypoint_paste">前フレームからペースト</button>
-            <span id="keypoint_message"></span>
+            <p id="keypoint_message_lack"></p>
+            <p id="keypoint_message_dupl"></p>
         </div>
     </div>
     <div>
@@ -312,33 +313,30 @@
             });
 
             // Show keypoint stats
-            const keypointMsg = document.getElementById('keypoint_message');
+            const keypointMsgLack = document.getElementById('keypoint_message_lack');
+            const keypointMsgDupl = document.getElementById('keypoint_message_dupl');
             // count keypoint labels
             let kpLabels = {};
             keypointNames.forEach(element => {
-                kpLabels[element] = 0;
+                kpLabels[element] = [];
             })
-            keypoints[page_i].forEach(element => {
-                kpLabels[element.k] = (kpLabels[element.k] || 0) + 1;
+            keypoints[page_i].forEach((element, idx) => {
+                if (element.k !== undefined && element.k !== null) {
+                    kpLabels[element.k].push(idx);
+                }
             });
             let lackKps = [];
             let duplKps = [];
             keypointNames.forEach(element => {
-                if (kpLabels[element] == 0) {
+                if (kpLabels[element].length == 0) {
                     lackKps.push(element);
                 }
-                if (kpLabels[element] > 1) {
-                    duplKps.push(element);
+                if (kpLabels[element].length > 1) {
+                    duplKps.push(element + '(' + kpLabels[element].join(', ') + ')');
                 }
             });
-            let msg = '';
-            if (lackKps.length > 0) {
-                msg = msg + 'lack: ' + lackKps.join(', ');
-            }
-            if (duplKps.length > 0) {
-                msg = msg + '\ndupl: ' + duplKps.join(', ');
-            }
-            keypointMsg.textContent = msg
+            keypointMsgLack.textContent = lackKps.join(', ');
+            keypointMsgDupl.textContent = duplKps.join(', ');
         }
 
     </script>
