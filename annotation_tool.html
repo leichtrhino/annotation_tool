@@ -66,6 +66,42 @@
         const tiffInputElement = document.getElementById('tiff_input');
         const csvInputElement = document.getElementById('csv_input');
         const keypointNames = ["Nose", "Left Eye", "Right Eye", "Head", "Tip of Left Ear", "Tip of Right Ear", "Chin", "Left Mouth", "Right Mouth", "Left Cheek", "Right Cheek", "Neck", "Root of Left Shoulder", "Left Shoulder", "Left Elbow", "Left Front Paw", "Tip of Left Front Paw", "Root of Right Shoulder", "Right Shoulder", "Right Elbow", "Right Front Paw", "Tip of Right Front Paw", "Hip", "Root of Left Hip", "Left Hip", "Left Knee", "Left Back Paw", "Tip of Left Back Paw", "Root of Right Hip", "Right Hip", "Right Knee", "Right Back Paw", "Tip of Right Back Paw", "Root of Tail", "Tip of Tail"];
+        const keypointEdges = {
+            "Head,Nose": "royalblue",
+            "Nose,Chin": "royalblue",
+            "Head,Left Eye": "royalblue",
+            "Head,Tip of Left Ear": "royalblue",
+            "Nose,Left Mouth": "royalblue",
+            "Left Mouth,Left Cheek": "royalblue",
+            "Head,Right Eye": "orange",
+            "Head,Tip of Right Ear": "orange",
+            "Nose,Right Mouth": "orange",
+            "Right Mouth,Right Cheek": "orange",
+            "Head,Neck": "royalblue",
+            "Neck,Root of Left Shoulder": "royalblue",
+            "Root of Left Shoulder,Left Shoulder": "royalblue",
+            "Left Shoulder,Left Elbow": "royalblue",
+            "Left Elbow,Left Front Paw": "royalblue",
+            "Left Front Paw,Tip of Left Front Paw": "royalblue",
+            "Neck,Root of Right Shoulder": "orange",
+            "Root of Right Shoulder,Right Shoulder": "orange",
+            "Right Shoulder,Right Elbow": "orange",
+            "Right Elbow,Right Front Paw": "orange",
+            "Right Front Paw,Tip of Right Front Paw": "orange",
+            "Neck,Hip": "royalblue",
+            "Hip,Root of Left Hip": "royalblue",
+            "Root of Left Hip,Left Hip": "royalblue",
+            "Left Hip,Left Knee": "royalblue",
+            "Left Knee,Left Back Paw": "royalblue",
+            "Left Back Paw,Tip of Left Back Paw": "royalblue",
+            "Hip,Root of Right Hip": "orange",
+            "Root of Right Hip,Right Hip": "orange",
+            "Right Hip,Right Knee": "orange",
+            "Right Knee,Right Back Paw": "orange",
+            "Right Back Paw,Tip of Right Back Paw": "orange",
+            "Hip,Root of Tail": "royalblue",
+            "Root of Tail,Tip of Tail": "royalblue"
+        }
         const keypointColor = 'red';
         const selectedKeypointColor = 'cyan'
         const keypointRadius = 2;
@@ -162,6 +198,7 @@
             if ((pageNum || 0) <= 0) {
                 return;
             }
+            // for each keypoint in current frame, get closest keypoint from previous frame
             for (let index = 0; index < keypoints[pageNum].length; index++) {
                 const kp = keypoints[pageNum][index];
                 let minDist = -1;
@@ -175,6 +212,31 @@
                 });
                 keypoints[pageNum][index].k = minLabel;
             }
+            // get closest keypoint from current frame for each previous frame
+            let nearestKeypoint = [];
+            keypoints[pageNum-1].forEach(kp => {
+                let minDist = -1;
+                keypoints[pageNum].forEach((e, i) => {
+                    const dist = (kp.x - e.x) * (kp.x - e.x) + (kp.y - e.y) * (kp.y - e.y)
+                    if (minDist < 0 || minDist > dist) {
+                        minDist = dist;
+                    }
+                });
+                if (minDist >= 0) {
+                    nearestKeypoint.push({kp: kp, dist: minDist});
+                }
+            });
+            // fill by previous frame
+            nearestKeypoint.sort((a, b) => b.dist - a.dist);
+            const addNum = keypointNames.length - keypoints[pageNum].length;
+            if (addNum < 0) {
+                addNum = 0;
+            }
+            for (let index = 0; index < addNum; index++) {
+                keypoints[pageNum].push({x: nearestKeypoint[index].kp.x, y: nearestKeypoint[index].kp.y, k: nearestKeypoint[index].kp.k});
+            }
+            // Sort keypoint array
+            keypoints[pageNum].sort((a, b) => (keypointNames.indexOf(a.k) >= 0 ? keypointNames.indexOf(a.k) : keypointNames.length) - (keypointNames.indexOf(b.k) >= 0 ? keypointNames.indexOf(b.k) : keypointNames.length));
             updatePageNum(pageNum);
         });
 
@@ -214,6 +276,31 @@
             const imageData = ctx.createImageData(tiff.width(), tiff.height());
             imageData.data.set(imageArray);
             ctx.putImageData(imageData, 0, 0);
+            // Draw line between keypoints
+            let kpixObj = {};
+            keypointNames.forEach(kpn => {
+                kpixObj[kpn] = [];
+            });
+            keypoints[pageNum].forEach((kp, kpix) => {
+                const kpnix = keypointNames.indexOf(kp.k);
+                if (kpnix >= 0) {
+                    kpixObj[kp.k].push(kpix);
+                }
+            });
+            for (const [kp12, c] of Object.entries(keypointEdges)) {
+                const [kp1, kp2] = kp12.split(",");
+                kpixObj[kp1].forEach(kpix1 => {
+                    kpixObj[kp2].forEach(kpix2 => {
+                        const k1 = keypoints[pageNum][kpix1];
+                        const k2 = keypoints[pageNum][kpix2];
+                        ctx.beginPath();
+                        ctx.moveTo(k1.x * scale, k1.y * scale);
+                        ctx.lineTo(k2.x * scale, k2.y * scale);
+                        ctx.strokeStyle = c;
+                        ctx.stroke();
+                    });
+                });
+            }
             // Draw keypoint circles
             const selectedKeypoint = keypointSelect.value;
             keypoints[pageNum].forEach((kp, idx) => {
@@ -293,6 +380,8 @@
                 kl.value = kp.k;
                 kl.addEventListener('change', (event) => {
                     keypoints[page_i][idx].k = event.target.value;
+                    // Sort keypoint array
+                    keypoints[page_i].sort((a, b) => (keypointNames.indexOf(a.k) >= 0 ? keypointNames.indexOf(a.k) : keypointNames.length) - (keypointNames.indexOf(b.k) >= 0 ? keypointNames.indexOf(b.k) : keypointNames.length));
                     updatePageNum(page_i);
                 });
                 k.appendChild(kl);
