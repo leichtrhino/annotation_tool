@@ -212,22 +212,6 @@
             });
             cxmean /= keypoints[pageNum].length || 1;
             cymean /= keypoints[pageNum].length || 1;
-            for (let index = 0; index < keypoints[pageNum].length; index++) {
-                const kp = keypoints[pageNum][index];
-                let minDist = -1;
-                let minLabel = undefined;
-                keypoints[pageNum-1].forEach((e, i) => {
-                    const xdiff = (kp.x - cxmean) - (e.x - pxmean);
-                    const ydiff = (kp.y - cymean) - (e.y - pymean);
-                    const dist = xdiff * xdiff + ydiff * ydiff;
-                    if (e.k !== undefined && (minDist < 0 || minDist > dist)) {
-                        minLabel = e.k;
-                        minDist = dist;
-                    }
-                });
-                keypoints[pageNum][index].k = minLabel;
-            }
-
             // for each keypoint in current frame, get closest keypoint from previous frame
             for (let index = 0; index < keypoints[pageNum].length; index++) {
                 const kp = keypoints[pageNum][index];
@@ -249,7 +233,9 @@
             keypoints[pageNum-1].forEach(kp => {
                 let minDist = -1;
                 keypoints[pageNum].forEach((e, i) => {
-                    const dist = (kp.x - e.x) * (kp.x - e.x) + (kp.y - e.y) * (kp.y - e.y)
+                    const xdiff = (kp.x - pxmean) - (e.x - cxmean);
+                    const ydiff = (kp.y - pymean) - (e.y - cymean);
+                    const dist = xdiff * xdiff + ydiff * ydiff;
                     if (minDist < 0 || minDist > dist) {
                         minDist = dist;
                     }
