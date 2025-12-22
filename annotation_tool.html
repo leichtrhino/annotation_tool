@@ -198,13 +198,45 @@
             if ((pageNum || 0) <= 0) {
                 return;
             }
+            // calculate mean point of previous and current frame
+            let pxmean = 0.0, pymean = 0.0, cxmean = 0.0, cymean = 0.0;
+            keypoints[pageNum-1].forEach(e => {
+                pxmean += e.x;
+                pymean += e.y;
+            });
+            pxmean /= keypoints[pageNum-1].length || 1;
+            pymean /= keypoints[pageNum-1].length || 1;
+            keypoints[pageNum].forEach(e => {
+                cxmean += e.x;
+                cymean += e.y;
+            });
+            cxmean /= keypoints[pageNum].length || 1;
+            cymean /= keypoints[pageNum].length || 1;
+            for (let index = 0; index < keypoints[pageNum].length; index++) {
+                const kp = keypoints[pageNum][index];
+                let minDist = -1;
+                let minLabel = undefined;
+                keypoints[pageNum-1].forEach((e, i) => {
+                    const xdiff = (kp.x - cxmean) - (e.x - pxmean);
+                    const ydiff = (kp.y - cymean) - (e.y - pymean);
+                    const dist = xdiff * xdiff + ydiff * ydiff;
+                    if (e.k !== undefined && (minDist < 0 || minDist > dist)) {
+                        minLabel = e.k;
+                        minDist = dist;
+                    }
+                });
+                keypoints[pageNum][index].k = minLabel;
+            }
+
             // for each keypoint in current frame, get closest keypoint from previous frame
             for (let index = 0; index < keypoints[pageNum].length; index++) {
                 const kp = keypoints[pageNum][index];
                 let minDist = -1;
                 let minLabel = undefined;
                 keypoints[pageNum-1].forEach((e, i) => {
-                    const dist = (kp.x - e.x) * (kp.x - e.x) + (kp.y - e.y) * (kp.y - e.y)
+                    const xdiff = (kp.x - cxmean) - (e.x - pxmean);
+                    const ydiff = (kp.y - cymean) - (e.y - pymean);
+                    const dist = xdiff * xdiff + ydiff * ydiff;
                     if (e.k !== undefined && (minDist < 0 || minDist > dist)) {
                         minLabel = e.k;
                         minDist = dist;
